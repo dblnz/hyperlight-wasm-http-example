@@ -6,6 +6,10 @@ use crate::wasi_impl;
 use crate::wasi_impl::bindings::RootSandbox;
 use hyperlight_wasm::LoadedWasmSandbox;
 
+/// The initial number of sandboxes to create in the pool.
+#[cfg(feature = "gdb")]
+const INITIAL_POOL_SIZE: usize = 1; // Only one sandbox to avoid port conflicts with gdb.
+#[cfg(not(feature = "gdb"))]
 const INITIAL_POOL_SIZE: usize = 10;
 
 /// Sandbox pool state shared across all requests.
@@ -47,9 +51,19 @@ impl SandboxPool {
 }
 
 fn builder(wasm_size: u64) -> hyperlight_wasm::SandboxBuilder {
-    hyperlight_wasm::SandboxBuilder::new()
+    #[cfg(not(feature = "gdb"))]
+    let builder = hyperlight_wasm::SandboxBuilder::new()
         .with_guest_heap_size((1.2 * wasm_size as f64) as u64)
-        .with_guest_scratch_size(1 * 1024 * 1024)
+        .with_guest_scratch_size(1 * 1024 * 1024);
+
+    // When debugging with gdb, we need to a big chunk of memory to avoid out-of-memory
+    #[cfg(feature = "gdb")]
+    let builder = hyperlight_wasm::SandboxBuilder::new()
+        .with_debugging_enabled(8080)
+        .with_guest_heap_size(6 * wasm_size)
+        .with_guest_scratch_size(6 * 1024 * 1024);
+
+    builder
         .with_guest_input_buffer_size(10 * 1024)
         .with_guest_output_buffer_size(10 * 1024)
 }
